@@ -146,7 +146,7 @@ avg_dist = gsd * sum(avg_dpx) / len(avg_dpx)
 avg_spd = (avg_dist / image_interval) / 1000  # in km/s
 
 # Write average speed to output file
-formatted_spd = "{:.4f}".format(avg_spd)
+formatted_spd = "{:.3f}".format(avg_spd)
 file_path = "result.txt"
 with open(file_path, "w") as file:
     file.write(formatted_spd)
