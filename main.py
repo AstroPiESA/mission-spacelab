@@ -1,4 +1,6 @@
 import math
+import os
+from time import sleep
 import numpy as np
 
 # Import the Camera class from the picamzero (picamera-zero) module
@@ -8,8 +10,8 @@ from picamzero import Camera  # type: ignore
 import cv2
 
 # Config
-image_num = 10
-image_interval = 3
+image_num = 80
+image_interval = 5
 
 iss_height = 408  # km
 sensor_width = 6.287  # mm
@@ -65,16 +67,6 @@ def calculate_matches(descriptors_1, descriptors_2):
     return matches
 
 
-# def display_matches(image_1_cv, keypoints_1, image_2_cv, keypoints_2, matches):
-#     match_img = cv2.drawMatches(
-#         image_1_cv, keypoints_1, image_2_cv, keypoints_2, matches[:100], None
-#     )
-#     resize = cv2.resize(match_img, (1200, 600), interpolation=cv2.INTER_AREA)
-#     cv2.imshow("matches", resize)
-#     cv2.waitKey(0)
-#     cv2.destroyWindow("matches")
-
-
 def find_matching_coordinates(keypoints_1, keypoints_2, matches):
     coordinates_1 = []
     coordinates_2 = []
@@ -110,7 +102,9 @@ def gsd_calculator(orbit_height, sensor_size, focal_length, img_size):
 # Create an instance of the Camera class
 cam = Camera()
 
-cam.capture_sequence("sequence", num_images=image_num, interval=image_interval)
+for i in range(image_num):
+    cam.capture_image(f"sequence-{str(i+1).zfill(2)}.jpg")
+    sleep(image_interval)
 
 avg_dpx = []
 img_width = 1412
@@ -144,7 +138,14 @@ for i in range(image_num - 1):
 gsd_w = gsd_calculator(iss_height, sensor_width, focal_length, img_width)
 gsd_h = gsd_calculator(iss_height, sensor_height, focal_length, img_height)
 gsd = max(gsd_w, gsd_h)
-
 avg_dist = gsd * sum(avg_dpx) / len(avg_dpx)
 avg_spd = (avg_dist / image_interval) / 1000  # in km/s
-print("Average speed: ", avg_spd, "m/s")
+
+formatted_spd = "{:.4f}".format(avg_spd)
+file_path = "result.txt"
+with open(file_path, "w") as file:
+    file.write(formatted_spd)
+
+# clean up files
+for i in range(image_num):
+    os.remove(f"sequence-{str(i+1).zfill(2)}.jpg")
