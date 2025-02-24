@@ -7,6 +7,15 @@ from picamzero import Camera  # type: ignore
 # Import OpenCV
 import cv2
 
+# Config
+image_num = 10
+image_interval = 3
+
+iss_height = 408  # km
+sensor_width = 6.287  # mm
+sensor_height = 4.712  # mm
+focal_length = 5  # mm
+
 
 def convert_to_cv(image_1, image_2):
     image_1_cv = cv2.imread(image_1)
@@ -20,7 +29,7 @@ def mask_image(image):
     # For hue: 0 is red, 60 is green, 120 is blue
     # We also want to filter out oceans by limiting hue at 90
     lower = np.array([0, 0, 10])
-    upper = np.array([90, 255, 165])
+    upper = np.array([90, 255, 185])
     mask = cv2.inRange(hsv_img, lower, upper)
     masked_image = cv2.bitwise_and(image, image, mask=mask)
     return mask
@@ -56,31 +65,86 @@ def calculate_matches(descriptors_1, descriptors_2):
     return matches
 
 
-def display_matches(image_1_cv, keypoints_1, image_2_cv, keypoints_2, matches):
-    match_img = cv2.drawMatches(
-        image_1_cv, keypoints_1, image_2_cv, keypoints_2, matches[:100], None
-    )
-    resize = cv2.resize(match_img, (1200, 600), interpolation=cv2.INTER_AREA)
-    cv2.imshow("matches", resize)
-    cv2.waitKey(0)
-    cv2.destroyWindow("matches")
+# def display_matches(image_1_cv, keypoints_1, image_2_cv, keypoints_2, matches):
+#     match_img = cv2.drawMatches(
+#         image_1_cv, keypoints_1, image_2_cv, keypoints_2, matches[:100], None
+#     )
+#     resize = cv2.resize(match_img, (1200, 600), interpolation=cv2.INTER_AREA)
+#     cv2.imshow("matches", resize)
+#     cv2.waitKey(0)
+#     cv2.destroyWindow("matches")
+
+
+def find_matching_coordinates(keypoints_1, keypoints_2, matches):
+    coordinates_1 = []
+    coordinates_2 = []
+    for match in matches:
+        image_1_idx = match.queryIdx
+        image_2_idx = match.trainIdx
+        (x1, y1) = keypoints_1[image_1_idx].pt
+        (x2, y2) = keypoints_2[image_2_idx].pt
+        coordinates_1.append((x1, y1))
+        coordinates_2.append((x2, y2))
+    return coordinates_1, coordinates_2
+
+
+def calculate_mean_distance(coordinates_1, coordinates_2):
+    all_distances = 0
+    merged_coordinates = list(zip(coordinates_1, coordinates_2))
+    for coordinate in merged_coordinates:
+        x_difference = coordinate[0][0] - coordinate[1][0]
+        y_difference = coordinate[0][1] - coordinate[1][1]
+        distance = math.hypot(x_difference, y_difference)
+        all_distances = all_distances + distance
+    return all_distances / len(merged_coordinates)
+
+
+# orbit height is the height of ISS in km
+# sensor size is the size of the sensor in mm
+# focal length is the focal length of the camera in mm
+# img size is the size of the image in pixels
+def gsd_calculator(orbit_height, sensor_size, focal_length, img_size):
+    return (orbit_height * 1000 * sensor_size) / (focal_length * img_size)
 
 
 # Create an instance of the Camera class
 cam = Camera()
 
-cam.capture_sequence("sequence", num_images=3, interval=3)
+cam.capture_sequence("sequence", num_images=image_num, interval=image_interval)
 
-image_1 = "sequence-1.jpg"
-image_2 = "sequence-2.jpg"
+avg_dpx = []
+img_width = 1412
+img_height = 1412
+for i in range(image_num - 1):
+    n = i + 1
+    image_1 = f"sequence-{str(n).zfill(2)}.jpg"
+    image_2 = f"sequence-{str(n+1).zfill(2)}.jpg"
 
-image_1_cv, image_2_cv = convert_to_cv(image_1, image_2)
-mask_1 = mask_image(image_1_cv)
-mask_2 = mask_image(image_2_cv)
-filtered_image_1 = apply_filter(image_1_cv)
-filtered_image_2 = apply_filter(image_2_cv)
-keypoints_1, keypoints_2, descriptors_1, descriptors_2 = calculate_features(
-    filtered_image_1, filtered_image_2, 1000, mask_1, mask_2
-)  # Get keypoints and descriptors
-matches = calculate_matches(descriptors_1, descriptors_2)  # Match descriptors
-display_matches(image_1_cv, keypoints_1, image_2_cv, keypoints_2, matches)
+    image_1_cv, image_2_cv = convert_to_cv(image_1, image_2)
+    if i == 0:
+        img_width = image_1_cv.shape[1]
+        img_height = image_1_cv.shape[0]
+    mask_1 = mask_image(image_1_cv)
+    mask_2 = mask_image(image_2_cv)
+    filtered_image_1 = apply_filter(image_1_cv)
+    filtered_image_2 = apply_filter(image_2_cv)
+    keypoints_1, keypoints_2, descriptors_1, descriptors_2 = calculate_features(
+        filtered_image_1, filtered_image_2, 1000, mask_1, mask_2
+    )  # Get keypoints and descriptors
+    matches = calculate_matches(descriptors_1, descriptors_2)  # Match descriptors
+
+    # display_matches(image_1_cv, keypoints_1, image_2_cv, keypoints_2, matches)
+
+    coordinates_1, coordinates_2 = find_matching_coordinates(
+        keypoints_1, keypoints_2, matches
+    )
+    average_feature_distance = calculate_mean_distance(coordinates_1, coordinates_2)
+    avg_dpx.append(average_feature_distance)
+
+gsd_w = gsd_calculator(iss_height, sensor_width, focal_length, img_width)
+gsd_h = gsd_calculator(iss_height, sensor_height, focal_length, img_height)
+gsd = max(gsd_w, gsd_h)
+
+avg_dist = gsd * sum(avg_dpx) / len(avg_dpx)
+avg_spd = (avg_dist / image_interval) / 1000  # in km/s
+print("Average speed: ", avg_spd, "m/s")
