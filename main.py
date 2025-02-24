@@ -102,11 +102,14 @@ def gsd_calculator(orbit_height, sensor_size, focal_length, img_size):
 # Create an instance of the Camera class
 cam = Camera()
 
+# Capture images at an interval
 for i in range(image_num):
     cam.capture_image(f"sequence-{str(i+1).zfill(2)}.jpg")
     sleep(image_interval)
 
+# Average pixel distance change between images
 avg_dpx = []
+# placeholder for image width and height according to astro pi replay
 img_width = 1412
 img_height = 1412
 for i in range(image_num - 1):
@@ -114,6 +117,7 @@ for i in range(image_num - 1):
     image_1 = f"sequence-{str(n).zfill(2)}.jpg"
     image_2 = f"sequence-{str(n+1).zfill(2)}.jpg"
 
+    # Calculate pixel distance change between two image
     image_1_cv, image_2_cv = convert_to_cv(image_1, image_2)
     if i == 0:
         img_width = image_1_cv.shape[1]
@@ -124,23 +128,24 @@ for i in range(image_num - 1):
     filtered_image_2 = apply_filter(image_2_cv)
     keypoints_1, keypoints_2, descriptors_1, descriptors_2 = calculate_features(
         filtered_image_1, filtered_image_2, 1000, mask_1, mask_2
-    )  # Get keypoints and descriptors
+    )
     matches = calculate_matches(descriptors_1, descriptors_2)  # Match descriptors
-
-    # display_matches(image_1_cv, keypoints_1, image_2_cv, keypoints_2, matches)
 
     coordinates_1, coordinates_2 = find_matching_coordinates(
         keypoints_1, keypoints_2, matches
     )
+    # Average the distance between matching points and add to list of pixel distance changes
     average_feature_distance = calculate_mean_distance(coordinates_1, coordinates_2)
     avg_dpx.append(average_feature_distance)
 
+# Calculate ground sampling distance factor
 gsd_w = gsd_calculator(iss_height, sensor_width, focal_length, img_width)
 gsd_h = gsd_calculator(iss_height, sensor_height, focal_length, img_height)
 gsd = max(gsd_w, gsd_h)
 avg_dist = gsd * sum(avg_dpx) / len(avg_dpx)
 avg_spd = (avg_dist / image_interval) / 1000  # in km/s
 
+# Write average speed to output file
 formatted_spd = "{:.4f}".format(avg_spd)
 file_path = "result.txt"
 with open(file_path, "w") as file:
